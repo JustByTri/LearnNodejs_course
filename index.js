@@ -1,6 +1,7 @@
 const express = require('express');
 const mongoose = require('mongoose');
 const authRoutes = require('./routes/auth');
+const courseRoutes = require('./routes/course');
 
 const app = express();
 const PORT = 3000;
@@ -14,6 +15,7 @@ mongoose.connect('mongodb+srv://trihoangnguyenn:2gTm57jOyfmBUd5u@cluster0.1ryjnd
 
 // Sử dụng routes
 app.use('/auth', authRoutes);
+app.use('/courses', courseRoutes);
 
 app.listen(PORT, () => {
   console.log(`Server is running on http://localhost:${PORT}`);

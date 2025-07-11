@@ -9,5 +9,8 @@ router.get('/', courseController.getCourses);
 router.get('/:id', courseController.getCourseById);
 router.put('/:id', authMiddleware, courseController.updateCourse);
 router.delete('/:id', authMiddleware, courseController.deleteCourse);
+// Duyệt và từ chối khoá học
+router.put('/:id/approve', authMiddleware, courseController.approveCourse);
+router.put('/:id/reject', authMiddleware, courseController.rejectCourse);
 
 module.exports = router;

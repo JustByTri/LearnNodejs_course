@@ -35,7 +35,7 @@ exports.login = async (req, res) => {
     if (!isMatch) {
       return res.status(400).json({ error: 'Email hoặc mật khẩu không đúng' });
     }
-    const token = jwt.sign({ userId: user._id, role: user.role }, 'secret_key', { expiresIn: '1d' });
+    const token = jwt.sign({ userId: user._id, role: user.role }, process.env.JWT_SECRET, { expiresIn: '1d' });
     res.json({ token });
   } catch (err) {
     res.status(500).json({ error: 'Lỗi server' });

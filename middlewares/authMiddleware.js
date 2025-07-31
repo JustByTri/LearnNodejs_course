@@ -7,7 +7,7 @@ module.exports = (req, res, next) => {
     return res.status(401).json({ error: 'Không có token, truy cập bị từ chối' });
   }
   try {
-    const decoded = jwt.verify(token, 'secret_key');
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
     req.user = decoded;
     next();
   } catch (err) {

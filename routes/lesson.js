@@ -10,6 +10,6 @@ router.put('/:id', authMiddleware, lessonController.updateLesson);
 
 router.delete('/:id', authMiddleware, lessonController.deleteLesson);
 
-router.get('/course/:courseId', lessonController.getLessonsByCourse);
+router.get('/course/:courseId', authMiddleware, lessonController.getLessonsByCourse);
 
 module.exports = router;

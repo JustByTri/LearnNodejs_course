@@ -46,9 +46,24 @@ exports.deleteLesson = async (req, res) => {
 };
 exports.getLessonsByCourse = async (req, res) => {
   try {
-    const lessons = await Lesson.find({ courseId: req.params.courseId }).sort({ sort: 1 });
+    const courseId = req.params.courseId;
+    const userId = req.user ? req.user.userId : null;
+    
+    // Kiểm tra user đã mua khoá học chưa
+    if (userId) {
+      const Enrollment = require('../models/Enrollment');
+      const enrollment = await Enrollment.findOne({ userId, courseId });
+      if (!enrollment) {
+        return res.status(403).json({ error: 'Bạn cần mua khoá học để xem nội dung' });
+      }
+    } else {
+      return res.status(401).json({ error: 'Cần đăng nhập để xem bài học' });
+    }
+    
+    const lessons = await Lesson.find({ courseId }).sort({ sort: 1 });
     res.json(lessons);
   } catch (err) {
     res.status(500).json({ error: 'Lỗi server' });
   }
 };
+  

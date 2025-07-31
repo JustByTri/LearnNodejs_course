@@ -1,14 +1,15 @@
+require('dotenv').config();
 const mongoose = require('mongoose');
 const User = require('./models/User');
 
-mongoose.connect('mongodb+srv://trihoangnguyenn:2gTm57jOyfmBUd5u@cluster0.1ryjnd2.mongodb.net/')
+mongoose.connect(process.env.MONGO_URI)
   .then(async () => {
     console.log('Kết nối MongoDB thành công!');
-    // Tạo thử 1 user
+  
     const user = new User({
       username: 'testuser',
       role: 'student',
-      email: 'test@example.com',
+      email: 'test@examcple.com',
       password: '123456'
     });
     await user.save();

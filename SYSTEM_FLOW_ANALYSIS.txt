@@ -1,0 +1,510 @@
+# TÓM TẮT LUỒNG CODE - HỆ THỐNG QUẢN LÝ KHÓA HỌC ONLINE
+
+## 1. KIẾN TRÚC TỔNG QUAN
+
+### Mô hình MVC (Model-View-Controller)
+```
+Client (Postman/Frontend) 
+    ↓ HTTP Request
+Routes (định nghĩa endpoint)
+    ↓ gọi Controller
+Controllers (xử lý logic)
+    ↓ tương tác với Model
+Models (MongoDB Schema)
+    ↓ trả về dữ liệu
+Controllers → Routes → Client
+```
+
+### Cấu trúc thư mục:
+```
+├── models/           # Schema định nghĩa cấu trúc dữ liệu
+├── controllers/      # Logic xử lý business 
+├── routes/          # Định nghĩa API endpoints
+├── middlewares/     # Xác thực và phân quyền
+├── index.js         # Entry point khởi động server
+├── .env            # Biến môi trường (bảo mật)
+└── package.json    # Dependencies và scripts
+```
+
+## 2. FLOW KHỞI ĐỘNG SERVER (index.js)
+
+```
+1. Load environment variables từ .env
+   ├── MONGO_URI (connection string MongoDB)
+   ├── JWT_SECRET (key mã hóa token) 
+   └── PORT (cổng server)
+
+2. Import các modules
+   ├── express (web framework)
+   ├── mongoose (MongoDB ODM)
+   └── routes (authRoutes, courseRoutes, orderRoutes, lessonRoutes, userRoutes)
+
+3. Khởi tạo Express app
+   ├── app.use(express.json()) - parse JSON từ request body
+   ├── Connect MongoDB via mongoose
+   └── Register routes với prefix:
+       ├── /auth → authRoutes
+       ├── /courses → courseRoutes  
+       ├── /orders → orderRoutes
+       ├── /lessons → lessonRoutes
+       └── /users → userRoutes
+
+4. Start server listen trên PORT
+```
+
+## 3. MODELS - ĐỊNH NGHĨA DỮ LIỆU
+
+### User.js (Người dùng)
+```javascript
+{
+  username: String,
+  email: String (unique),
+  password: String (đã mã hóa),
+  role: Enum['admin', 'teacher', 'student'],
+  createdAt: Date
+}
+```
+
+### Course.js (Khóa học)
+```javascript
+{
+  coursename: String,
+  description: String,
+  price: Number,
+  teacherId: ObjectId (ref: User),
+  status: String ['pending', 'approved', 'rejected'],
+  createdAt: Date
+}
+```
+
+### Lesson.js (Bài học)
+```javascript
+{
+  title: String,
+  content: String,
+  sort: Number (thứ tự),
+  courseId: ObjectId (ref: Course),
+  createdAt: Date
+}
+```
+
+### Order.js (Đơn hàng)
+```javascript
+{
+  userId: ObjectId (ref: User),
+  courseId: ObjectId (ref: Course),
+  price: Number,
+  status: String ['paid', 'pending', 'cancelled'],
+  createdAt: Date
+}
+```
+
+### Enrollment.js (Đăng ký học)
+```javascript
+{
+  userId: ObjectId (ref: User),
+  courseId: ObjectId (ref: Course),
+  enrollAt: Date
+}
+```
+
+## 4. MIDDLEWARES - BẢO MẬT VÀ PHÂN QUYỀN
+
+### authMiddleware.js - Xác thực JWT
+```
+1. Lấy token từ header "Authorization: Bearer <token>"
+2. Verify token bằng JWT_SECRET
+3. Decode thông tin user (userId, role)
+4. Gán vào req.user để controller sử dụng
+5. Cho phép request tiếp tục hoặc reject (401)
+```
+
+### adminMiddleware.js - Chỉ Admin
+```
+1. Kiểm tra req.user.role === 'admin'
+2. Cho phép tiếp tục hoặc reject (403)
+```
+
+### teacherMiddleware.js - Chỉ Teacher  
+```
+1. Kiểm tra req.user.role === 'teacher'
+2. Cho phép tiếp tục hoặc reject (403)
+```
+
+## 5. CONTROLLERS - LOGIC XỬ LÝ BUSINESS
+
+### authController.js - Đăng ký/Đăng nhập
+
+#### register()
+```
+1. Nhận {username, email, password, role} từ req.body
+2. Validate dữ liệu đầu vào
+3. Kiểm tra email đã tồn tại chưa
+4. Hash password bằng bcrypt
+5. Tạo User mới và save vào DB
+6. Trả về response success
+```
+
+#### login() 
+```
+1. Nhận {email, password} từ req.body
+2. Tìm user theo email trong DB
+3. So sánh password với hash đã lưu
+4. Tạo JWT token chứa {userId, role}
+5. Trả về token cho client
+```
+
+### courseController.js - Quản lý khóa học
+
+#### createCourse()
+```
+1. Lấy teacherId từ req.user.userId (đã xác thực)
+2. Nhận {coursename, description, price} từ req.body
+3. Tạo Course mới với status='pending' 
+4. Save vào DB và trả về response
+```
+
+#### getCourses() - Tìm kiếm và lọc
+```
+1. Lấy query params: search, minPrice, maxPrice, status
+2. Xây dựng MongoDB filter object:
+   ├── search → regex tìm trong coursename/description
+   ├── minPrice/maxPrice → price range
+   └── status → exact match
+3. Thực hiện Course.find(filter).populate('teacherId')
+4. Trả về danh sách khóa học
+```
+
+#### updateCourse()
+```
+1. Tìm course theo req.params.id
+2. Kiểm tra course.teacherId === req.user.userId (chỉ sửa khóa học của mình)
+3. Cập nhật thông tin và save
+4. Trả về course đã cập nhật
+```
+
+#### approveCourse() - Admin duyệt
+```
+1. Tìm course theo ID
+2. Đổi status = 'approved'
+3. Save và trả về response
+```
+
+#### getTeacherStats() - Thống kê giảng viên
+```
+1. Lấy teacherId từ req.user.userId
+2. Tính tổng doanh thu từ orders của các khóa học
+3. Đếm số lượng khóa học và học viên
+4. Trả về thống kê
+```
+
+### orderController.js - Mua bán
+
+#### buyCourse()
+```
+1. Lấy userId từ req.user.userId và courseId từ req.params.id
+2. Tìm course và kiểm tra status='approved'
+3. Kiểm tra user đã mua khóa học chưa (Enrollment)
+4. Tạo Order mới với status='paid'
+5. Tạo Enrollment (đăng ký học)
+6. Trả về response success
+```
+
+#### getMyCourses()
+```
+1. Lấy userId từ req.user.userId
+2. Tìm tất cả Enrollment của user
+3. Populate thông tin khóa học
+4. Trả về danh sách khóa học đã mua
+```
+
+### lessonController.js - Quản lý bài học
+
+#### createLesson()
+```
+1. Nhận {title, content, sort, courseId} từ req.body
+2. Kiểm tra courseId tồn tại
+3. Tạo Lesson mới và save
+4. Trả về response
+```
+
+#### getLessonsByCourse() - Xem bài học
+```
+1. Lấy courseId từ req.params.courseId và userId từ req.user
+2. Kiểm tra user đã mua khóa học (Enrollment) 
+3. Nếu chưa mua → reject (403)
+4. Nếu đã mua → trả về danh sách bài học sắp xếp theo sort
+```
+
+### userController.js - Quản lý người dùng
+
+#### getUsers() - Admin xem danh sách
+```
+1. Tìm tất cả User (bỏ password)
+2. Trả về danh sách
+```
+
+#### updateProfile()
+```
+1. Lấy userId từ req.user.userId
+2. Cập nhật username, email
+3. Trả về user info đã cập nhật
+```
+
+## 6. ROUTES - ĐỊNH NGHĨA API ENDPOINTS
+
+### /auth
+```
+POST /register → authController.register
+POST /login → authController.login
+```
+
+### /courses
+```
+GET    /          → getCourses (public)
+GET    /:id       → getCourseById (public)
+POST   /          → createCourse (teacher only)
+PUT    /:id       → updateCourse (teacher only, own course)
+DELETE /:id       → deleteCourse (teacher only, own course)
+PUT    /:id/approve → approveCourse (admin only)
+PUT    /:id/reject  → rejectCourse (admin only)
+GET    /stats/teacher → getTeacherStats (teacher only)
+GET    /stats/admin   → getAdminStats (admin only)
+```
+
+### /orders
+```
+POST /buy/:id      → buyCourse (authenticated)
+GET  /my-courses   → getMyCourses (authenticated)
+```
+
+### /lessons
+```
+POST   /              → createLesson (teacher only)
+PUT    /:id           → updateLesson (teacher only)
+DELETE /:id           → deleteLesson (teacher only)
+GET    /course/:courseId → getLessonsByCourse (student, must own course)
+```
+
+### /users
+```
+GET    /         → getUsers (admin only)
+DELETE /:id      → deleteUser (admin only)
+GET    /profile  → getProfile (authenticated)
+PUT    /profile  → updateProfile (authenticated)
+```
+
+## 7. LUỒNG HOẠT ĐỘNG CHI TIẾT
+
+### A. Luồng đăng ký người dùng
+```
+Client → POST /auth/register 
+    ↓ {username, email, password, role}
+authRoutes → authController.register
+    ↓ Validate input
+    ↓ Check email exists
+    ↓ Hash password (bcrypt)
+    ↓ Create User in MongoDB
+    ↓ Return success message
+Client ← Response {message: "Đăng ký thành công"}
+```
+
+### B. Luồng đăng nhập
+```
+Client → POST /auth/login
+    ↓ {email, password}
+authRoutes → authController.login
+    ↓ Find user by email
+    ↓ Compare password with hash
+    ↓ Generate JWT token
+    ↓ Return token
+Client ← Response {token: "eyJ..."}
+Client stores token for future requests
+```
+
+### C. Luồng tạo khóa học (Teacher)
+```
+Client → POST /courses
+    ↓ Headers: Authorization: Bearer <token>
+    ↓ Body: {coursename, description, price}
+courseRoutes → authMiddleware → teacherMiddleware → courseController.createCourse
+    ↓ Extract teacherId from req.user.userId
+    ↓ Create Course with status='pending'
+    ↓ Save to MongoDB
+    ↓ Return course info
+Client ← Response {message: "Tạo khóa học thành công", course}
+```
+
+### D. Luồng admin duyệt khóa học
+```
+Client → PUT /courses/:id/approve
+    ↓ Headers: Authorization: Bearer <admin_token>
+courseRoutes → authMiddleware → adminMiddleware → courseController.approveCourse
+    ↓ Find course by ID
+    ↓ Update status = 'approved'
+    ↓ Save to MongoDB
+    ↓ Return updated course
+Client ← Response {message: "Khoá học đã được duyệt", course}
+```
+
+### E. Luồng mua khóa học (Student)
+```
+Client → POST /orders/buy/:courseId
+    ↓ Headers: Authorization: Bearer <student_token>
+orderRoutes → authMiddleware → orderController.buyCourse
+    ↓ Extract userId from req.user.userId
+    ↓ Find course and validate status='approved'
+    ↓ Check if already enrolled
+    ↓ Create Order with status='paid'
+    ↓ Create Enrollment record
+    ↓ Save to MongoDB
+    ↓ Return success
+Client ← Response {message: "Mua khóa học thành công", order}
+```
+
+### F. Luồng xem bài học (Student đã mua)
+```
+Client → GET /lessons/course/:courseId
+    ↓ Headers: Authorization: Bearer <student_token>
+lessonRoutes → authMiddleware → lessonController.getLessonsByCourse
+    ↓ Extract userId from req.user.userId
+    ↓ Check Enrollment exists (userId, courseId)
+    ↓ If not enrolled → 403 Forbidden
+    ↓ If enrolled → Find lessons and sort by 'sort'
+    ↓ Return lessons list
+Client ← Response [lesson1, lesson2, lesson3...]
+```
+
+### G. Luồng tìm kiếm khóa học
+```
+Client → GET /courses?search=nodejs&minPrice=100000&maxPrice=1000000&status=approved
+courseRoutes → courseController.getCourses
+    ↓ Parse query parameters
+    ↓ Build MongoDB filter:
+        {
+          $or: [
+            {coursename: {$regex: "nodejs", $options: "i"}},
+            {description: {$regex: "nodejs", $options: "i"}}
+          ],
+          price: {$gte: 100000, $lte: 1000000},
+          status: "approved"
+        }
+    ↓ Execute Course.find(filter).populate('teacherId', 'username')
+    ↓ Return filtered courses
+Client ← Response [filtered_course1, filtered_course2...]
+```
+
+## 8. BẢO MẬT VÀ PHÂN QUYỀN
+
+### JWT Authentication Flow
+```
+1. User login → Server tạo JWT token chứa {userId, role}
+2. Client lưu token và gửi trong header mỗi request
+3. authMiddleware verify token và gán thông tin vào req.user
+4. Controller sử dụng req.user.userId và req.user.role
+5. Token expired → Client phải login lại
+```
+
+### Role-based Access Control
+```
+- Public routes: GET /courses, GET /courses/:id
+- Authenticated: Profile management, buy course
+- Teacher: Create/edit own courses and lessons
+- Admin: Approve courses, manage users, view all stats
+```
+
+### Database Security
+```
+- Password được hash bằng bcrypt (salt rounds = 10)
+- JWT_SECRET và MONGO_URI trong .env file
+- MongoDB connection string không hardcode trong source code
+- .env file trong .gitignore để không push lên repository
+```
+
+## 9. ERROR HANDLING
+
+### Các loại lỗi phổ biến:
+```
+- 400 Bad Request: Thiếu dữ liệu đầu vào, validation fails
+- 401 Unauthorized: Chưa đăng nhập, token invalid
+- 403 Forbidden: Không có quyền truy cập
+- 404 Not Found: Resource không tồn tại
+- 500 Internal Server Error: Lỗi server, database connection
+```
+
+### Try-catch pattern trong mọi controller:
+```javascript
+try {
+  // Logic xử lý
+  res.json(result);
+} catch (err) {
+  res.status(500).json({ error: 'Lỗi server' });
+}
+```
+
+## 10. DATABASE RELATIONSHIPS
+
+### User → Courses (1:n)
+```
+User (Teacher) có thể tạo nhiều Courses
+Course.teacherId references User._id
+```
+
+### Course → Lessons (1:n) 
+```
+Course có thể chứa nhiều Lessons
+Lesson.courseId references Course._id
+```
+
+### User → Orders (1:n)
+```
+User có thể có nhiều Orders (mua nhiều khóa học)
+Order.userId references User._id
+```
+
+### Course → Orders (1:n)
+```
+Course có thể được mua bởi nhiều Users
+Order.courseId references Course._id
+```
+
+### User ↔ Courses (n:m) qua Enrollment
+```
+User có thể đăng ký nhiều Courses
+Course có thể có nhiều enrolled Users
+Enrollment.userId references User._id
+Enrollment.courseId references Course._id
+```
+
+## 11. DEPLOYMENT CONSIDERATIONS
+
+### Environment Variables (.env)
+```
+MONGO_URI=mongodb+srv://username:password@cluster.mongodb.net/dbname
+JWT_SECRET=your-super-secret-key-256-bits
+PORT=3000
+NODE_ENV=production
+```
+
+### Production checklist:
+```
+- Sử dụng HTTPS thay vì HTTP
+- JWT_SECRET phải là chuỗi ngẫu nhiên mạnh
+- MongoDB connection với authentication
+- Rate limiting để chống spam/DDoS
+- Input validation và sanitization
+- CORS configuration cho frontend
+- Logging và monitoring
+```
+
+---
+
+## KẾT LUẬN
+
+Hệ thống được thiết kế theo kiến trúc RESTful API với:
+- **Phân tách rõ ràng** giữa Model-Controller-Route
+- **Bảo mật tốt** với JWT và role-based access control  
+- **Scalable** dễ dàng thêm tính năng mới
+- **Maintainable** code có tổ chức, dễ đọc và sửa lỗi
+
+Luồng hoạt động từ Client request → Routes → Middlewares → Controllers → Models → Database và ngược lại, đảm bảo tính nhất quán và bảo mật trong toàn bộ hệ thống.
